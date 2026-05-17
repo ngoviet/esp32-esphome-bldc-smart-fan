@@ -1,0 +1,5 @@
+/.esphome/
+/secrets.yaml
+*.pem
+Thumbs.db
+Desktop.ini

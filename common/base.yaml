@@ -1,0 +1,207 @@
+# ===========================================
+# T-Series Fan — Shared Device Logic (ESPHome)
+# ===========================================
+# This file is shared across t1-fan, t2-fan, t3-fan via ESPHome packages.
+# All substitutions are defined in the per-device YAML files.
+# ===========================================
+
+esphome:
+  name: ${device_name}
+  on_boot:
+    priority: 200
+    then:
+      - lambda: |-
+          if (id(fan_light).current_values.is_on()) {
+            id(apply_freq).execute();
+          }
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# ---------- WIFI CONFIG ----------
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  power_save_mode: none
+  fast_connect: true
+  reboot_timeout: 30min
+
+# ---------- LOGGING & API ----------
+logger:
+  baud_rate: ${logger_baud_rate}
+  level: DEBUG
+
+api:
+  reboot_timeout: 15min
+
+ota:
+  - platform: esphome
+
+# ========== BIẾN LƯU TẦN SỐ NỀN ==========
+globals:
+  - id: freq_hz
+    type: int
+    restore_value: yes
+    initial_value: '${default_frequency}'
+  - id: disable_sync_until
+    type: uint32_t
+    initial_value: '0'
+
+# ---------- XUẤT XUNG CLK THỰC TẾ ----------
+output:
+  - platform: ledc
+    id: clk_out
+    pin: ${clk_pin}
+    channel: ${clk_channel}
+    frequency: ${default_frequency}Hz
+    inverted: false
+
+# ---------- TEMPLATE OUTPUT (CHUYỂN % -> HZ) ----------
+# Output ảo này nhận mức thay đổi độ sáng 0.0 -> 1.0 (0-100%) từ Light
+  - platform: template
+    id: brightness_to_freq_output
+    type: float
+    write_action:
+      - lambda: |-
+          // Khóa ghi đè trong vòng 2 giây kể từ lần cuối vặn núm (chống nhảy ngược)
+          uint32_t elapsed = millis() - id(disable_sync_until);
+          if (elapsed >= 2000) {
+            int expected_knob = (int)((state * 100.0f) / 3.0f + 0.5f);
+            if (id(knob).state != expected_knob) {
+              id(knob).set_value(expected_knob);
+            }
+          }
+
+          // state nhận giá trị từ 0.0 đến 1.0
+          if (state <= 0.01) {
+            // Độ sáng < 1% (tắt) -> dừng xung PWM
+            id(freq_hz) = 0;
+            id(clk_out).set_level(0.0f);
+          } else {
+            // Dải hoạt động chuẩn: ${freq_min}Hz -> ${freq_max}Hz
+            // Chênh lệch (delta) = ${freq_max} - ${freq_min} = 300
+            // Nhờ đó, mỗi 1% độ sáng sẽ tăng đúng 3Hz (là số nguyên)
+            id(freq_hz) = (int)(state * (float)(${freq_max} - ${freq_min})) + ${freq_min};
+            // Set tần số mới + duty 50%
+            id(apply_freq).execute();
+          }
+
+# ---------- SCRIPT ÁP TẦN SỐ VÀ DUTY 50% ----------
+script:
+  - id: apply_freq
+    mode: restart
+    then:
+      - output.ledc.set_frequency:
+          id: clk_out
+          frequency: !lambda "return id(freq_hz);"
+      - output.set_level:
+          id: clk_out
+          level: 50%
+
+# ---------- ENTITY ĐÈN / QUẠT TRONG HA ----------
+light:
+  - platform: monochromatic
+    name: "Speed"
+    id: fan_light
+    icon: "mdi:fan"
+    output: brightness_to_freq_output
+    gamma_correct: 1.0
+    default_transition_length: 0s
+    restore_mode: RESTORE_DEFAULT_OFF
+
+# ---------- NÚM XOAY ECC11 ----------
+sensor:
+  - platform: rotary_encoder
+    id: knob
+    name: "Encoder ECC11"
+    pin_a:
+      number: ${encoder_clk_pin}
+      mode:
+        input: true
+        pullup: true
+    pin_b:
+      number: ${encoder_dt_pin}
+      mode:
+        input: true
+        pullup: true
+    resolution: ${encoder_resolution}
+
+    # Sử dụng bộ đếm số nguyên phần cứng của Encoder để dập lỗi nhảy số!
+    # Từ 0 đến 33 khấc (Mỗi khấc 3%. 0=0%, 33=99~100%)
+    min_value: 0
+    max_value: 33
+    on_value:
+      - lambda: |-
+          id(disable_sync_until) = millis();
+
+          float b = (x * 3.0f) / 100.0f;
+          if (b >= 0.99f) b = 1.0f; // Khóa 100% tại max
+
+          if (b <= 0.01f) {
+            if (!id(fan_light).current_values.is_on()) { return; }
+            id(fan_light).turn_off().perform();
+          } else {
+            auto call = id(fan_light).turn_on();
+            call.set_brightness(b);
+            call.perform();
+          }
+    internal: true
+
+  # Fan frequency display
+  - platform: template
+    name: "Fan Frequency"
+    lambda: "return id(freq_hz);"
+    update_interval: 5s
+    unit_of_measurement: "Hz"
+    entity_category: diagnostic
+    icon: "mdi:sine-wave"
+
+  # WiFi diagnostic
+  - platform: wifi_signal
+    id: rssi_dbm
+    name: "WiFi RSSI"
+    update_interval: 30s
+    filters:
+      - sliding_window_moving_average:
+          window_size: 5
+          send_every: 1
+
+# ---------- TEXT SENSOR ----------
+text_sensor:
+  - platform: template
+    name: "Firmware Version"
+    lambda: "return {std::string(\"${firmware_version}\")};"
+    update_interval: 3600s
+    entity_category: diagnostic
+    icon: "mdi:information-outline"
+
+  - platform: wifi_info
+    ip_address:
+      name: "WiFi IP"
+    ssid:
+      name: "WiFi SSID"
+
+# ---------- NÚT NHẤN TRÊN ENCODER (BẬT/TẮT QUẠT) ----------
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: ${encoder_sw_pin}
+      mode:
+        input: true
+        pullup: true
+      inverted: true
+    name: "Nút ấn ECC11"
+    filters:
+      - delayed_on: 50ms
+      - delayed_off: 50ms
+    on_press:
+      - light.toggle: fan_light
+
+# Nút mềm khởi động lại
+button:
+  - platform: restart
+    id: restart_button
+    name: "Restart thiết bị"

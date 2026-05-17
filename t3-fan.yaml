@@ -1,0 +1,26 @@
+# ========== T3 FAN CONFIG ==========
+substitutions:
+  device_name: "t3-fan"
+  device_friendly_name: "T3 Fan"
+
+  # GPIO Pins
+  clk_pin: "GPIO26"
+  clk_channel: "0"
+  encoder_clk_pin: "GPIO32"
+  encoder_dt_pin: "GPIO33"
+  encoder_sw_pin: "GPIO25"
+
+  # PWM Frequency
+  default_frequency: "150"
+  freq_min: "100"
+  freq_max: "400"
+
+  # Encoder
+  encoder_resolution: "1"
+
+  # Misc
+  logger_baud_rate: "115200"
+  firmware_version: "2.0.2"
+
+packages:
+  base: !include common/base.yaml
