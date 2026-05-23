@@ -1,274 +1,314 @@
-# ESP32 ESPHome BLDC Smart Fan
+# ESP32 ESPHome BLDC Smart Fan — T-Series
 
-Variable-speed brushless DC (BLDC) fan controller using ESP32 + ESPHome. Replace your old AC fan controller with a stepless, WiFi-connected speed control that integrates natively with Home Assistant.
+WiFi-connected stepless BLDC ceiling fan controller using ESP32 + ESPHome. Natively integrates with **Home Assistant** via ESPHome API. Supports **two BLDC driver types**: frequency-controlled (T1-T3) and duty-cycle PWM-controlled (T31 with oscillation).
 
+[![GitHub last commit](https://img.shields.io/github/last-commit/ngoviet/esp32-esphome-bldc-smart-fan)](https://github.com/ngoviet/esp32-esphome-bldc-smart-fan)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![ESPHome](https://img.shields.io/badge/ESPHome-2026.4.3-blue)](https://esphome.io/)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ngoviet-yellow?logo=buymeacoffee)](https://buymeacoffee.com/ngoviet)
 
-## How It Works
+---
 
-Most BLDC ceiling fan drivers use a **variable-frequency square wave** (CLK signal) to set motor speed — NOT PWM duty cycle. The motor driver reads the CLK frequency and adjusts the motor accordingly:
+## Models & BLDC Driver Types
 
-| Speed | Frequency |
-|-------|-----------|
+This project supports two BLDC fan driver architectures. Choose based on your motor driver board.
+
+| Model | Board | Control Method | CLK Signal | Extras |
+|-------|-------|---------------|------------|--------|
+| **T1 / T2 / T3** | ESP32 30-pin | **Frequency** (100–400 Hz, 50% fixed duty) | `inverted: false` | — |
+| **T31** | ESP32 38-pin | **Duty-cycle** (fixed 150 Hz, 30–99.5% variable duty) | `inverted: true` (HIGH = stop) | **Oscillation motor** via D4184 MOSFET (GPIO27) |
+
+### T1-T3: Frequency-Based BLDC Control
+
+Most BLDC ceiling fan drivers (Lishui, Vego, and similar) use a **variable-frequency square wave** to set motor speed. The driver reads the CLK signal frequency and adjusts the motor proportionally:
+
+| Brightness | Frequency |
+|-----------|-----------|
 | 0% (OFF) | No signal |
 | 1% | 103 Hz |
 | 50% | 250 Hz |
 | 100% | 400 Hz |
 
-The ESP32 generates this CLK signal via its **LEDC hardware peripheral** at a fixed 50% duty cycle. A physical **EC11 rotary encoder** provides local stepless control, while **Home Assistant** integration allows remote control and automation via ESPHome's native API.
+Duty cycle is locked at 50%. The ESP32's **LEDC hardware peripheral** generates this signal on GPIO26.
 
-ESPHome has no built-in BLDC fan component that supports CLK frequency control. This project uses `light.monochromatic` as a clean workaround — the brightness slider (0-100%) maps linearly to frequency (100-400 Hz). The fan appears in Home Assistant with a fan icon and full slider control.
+### T31: Duty-Cycle BLDC Control with Oscillation
+
+The T31 uses a different BLDC driver that requires a **variable duty-cycle PWM** at a fixed frequency (150 Hz). The signal polarity is inverted — **HIGH = motor stop, LOW pulse width = speed**. This driver is commonly found in fans with a separate oscillation (swing) motor.
+
+| Brightness | Duty (inverted) | Effect |
+|-----------|----------------|--------|
+| OFF | 0.5% LOW (≈HIGH) | Motor stopped |
+| 1% | 30% LOW | Minimum speed |
+| 50% | 65% LOW | Medium speed |
+| 100% | 99.5% LOW | Maximum speed |
+
+**Oscillation control:** The T31's swing motor is driven by a **D4184 dual MOSFET module** on GPIO27. A GPIO switch in ESPHome toggles the oscillation motor independently from the main fan speed — you can have the fan blowing in a fixed direction or sweeping the room.
+
+> **Why 0.5%–99.5% instead of 0%–100%?** ESPHome's LEDC output calls `ledc_stop()` when duty hits exactly 0% or 100%, which causes a momentary glitch when restarting. By clamping at 0.5%–99.5%, the LEDC timer runs continuously — speed transitions are seamleess with zero dips or flicker.
+
+---
 
 ## Features
 
-- **Stepless speed control** — 0–100% via rotary encoder or Home Assistant slider
-- **Instant response** — no transition lag, linear gamma
-- **Anti-flicker sync** — physical knob and HA state stay synchronized, even after power loss
-- **State persistence** — fan speed and on/off state survive reboots
-- **Multi-fan ready** — easily manage multiple identical fans (T1, T2, T3...) from one codebase
-- **Diagnostic sensors** — frequency (Hz), firmware version, WiFi RSSI all visible in HA
-- **OTA updates** — flash firmware over WiFi without opening the enclosure
+- **Stepless speed control** — 0–100% via rotary encoder knob or Home Assistant slider
+- **Dual BLDC support** — frequency mode (T1-T3) and duty-cycle mode (T31)
+- **Motorized oscillation** (T31) — independent swing toggle via D4184 MOSFET
+- **Instant response** — no transition lag, linear gamma correction
+- **Anti-flicker sync** — physical knob and HA state stay synchronized; 2-second debounce lockout
+- **State persistence** — speed and on/off state survive power loss and reboots
+- **OTA firmware updates** — flash over WiFi without opening the enclosure
+- **Multi-fan management** — all fans share one codebase via ESPHome packages
+- **Diagnostic sensors** — speed parameter (Hz or %), firmware version, WiFi RSSI visible in HA
+- **Micro-duty anti-glitch** — LEDC timer never stops; clean speed transitions across the full range
+
+---
 
 ## Hardware Requirements
 
 ### Bill of Materials (per fan)
 
-| Component | Qty | Notes |
-|-----------|-----|-------|
-| ESP32 Dev Board (esp32dev) | 1 | 240MHz, 4MB flash. Any ESP32-DevKitC/WROOM is fine |
-| EC11 Rotary Encoder | 1 | 20-pulse mechanical type, with push button |
-| BLDC Fan Driver Board | 1 | Must accept **frequency-based CLK input** (100-400Hz) |
-| BLDC Ceiling Fan Motor | 1 | Match voltage/power to driver board |
-| 3.3V Regulator (optional) | 1 | If fan driver needs different voltage logic |
-| Wires + Connectors | - | Dupont, JST, or soldered |
+| Component | T1-T3 | T31 | Notes |
+|-----------|-------|-----|-------|
+| ESP32 Dev Board | 30-pin | 38-pin | 240 MHz, 4 MB flash |
+| EC11 Rotary Encoder | ✓ | ✓ | 20-pulse with push button |
+| BLDC Fan Driver (frequency) | ✓ | — | 100–400 Hz CLK input |
+| BLDC Fan Driver (duty-cycle) | — | ✓ | 150 Hz PWM, inverted logic |
+| D4184 MOSFET Module | — | ✓ | Dual MOSFET for swing motor |
+| BLDC Ceiling Fan Motor | ✓ | ✓ | Match voltage to driver board |
+| Oscillation Motor | — | ✓ | Separate swing motor (T31 only) |
+| Jumper Wires | ✓ | ✓ | Dupont or JST connectors |
 
-> **Where to buy:** Find BLDC fan driver boards on Shopee/AliExpress by searching "BLDC fan driver CLK" or "quạt BLDC board". Common brands: Lishui, Vego, etc. The driver board should have a `PWM_IN` or `CLK` input pin that accepts a frequency-based speed signal.
+### GPIO Pinout
 
-### GPIO Wiring
-
-```
-ESP32              EC11 Encoder          BLDC Fan Driver
-───────            ────────────          ───────────────
-3.3V  ──────────── VCC (+)
-GND   ─┬────────── GND              ─┬── GND
-       │                              │
-GPIO26 ───────────────────────────────┼── PWM_IN / CLK
-                                      │
-GPIO32 ──────────── CLK (signal A)    │
-GPIO33 ──────────── DT  (signal B)    │
-GPIO25 ──────────── SW  (push button)
-```
-
-### Wiring Diagram
+#### T1 / T2 / T3 (30-pin ESP32)
 
 ```
-         ESP32 Dev Board
-    ┌─────────────────────────┐
-    │  EN                  D23│
-    │  D0                  D22│
-    │  D2                  TX │
-    │  D4                  RX │
-    │  D5               D21   │
-    │  D18              D19   │
-    │  D15  3.3V──┬──GND      │
-    │  D25──►SW   │           │
-    │  D26──►PWM_IN          │
-    │  D27──D32──►CLK        │
-    │  D14──D33──►DT         │
-    │  D12              D13  │
-    │  D26              D25  │
-    └─────────────────────────┘
-           │     │     │
-           │     │     └──► BLDC Driver PWM_IN
-           │     └────────► EC11 DT
-           └──────────────► EC11 CLK
-
-    EC11 Encoder (front view, pins facing you)
-    ┌──────────────┐
-    │  O   O    O  │
-    │ GND  +   SW  │──► ESP32 GPIO25
-    │ CLK  DT      │──► ESP32 GPIO32, GPIO33
-    └──────────────┘
-
-    * Connect EC11 VCC to ESP32 3.3V
-    * Connect EC11 GND to ESP32 GND
-    * BLDC Driver GND MUST share ESP32 GND
+ESP32 GPIO    Function
+──────────    ────────
+GPIO26   →    CLK output (frequency signal to BLDC driver)
+GPIO32   ←    EC11 CLK (rotary encoder, INPUT_PULLUP)
+GPIO33   ←    EC11 DT  (rotary encoder, INPUT_PULLUP)
+GPIO25   ←    EC11 SW  (push button, INPUT_PULLUP, inverted)
 ```
 
-> **Important:** The ESP32 and BLDC fan driver **must share a common ground (GND)**. The CLK signal is a voltage referenced to ground — without a shared ground, the driver cannot read the signal.
+#### T31 (38-pin ESP32)
+
+```
+ESP32 GPIO    Function
+──────────    ────────
+GPIO26   →    CLK output (duty-cycle PWM to BLDC driver, inverted)
+GPIO27   →    D4184 MOSFET gate (oscillation swing motor ON/OFF)
+GPIO32   ←    EC11 CLK (rotary encoder, INPUT_PULLUP)
+GPIO33   ←    EC11 DT  (rotary encoder, INPUT_PULLUP)
+GPIO25   ←    EC11 SW  (push button, INPUT_PULLUP, inverted)
+```
+
+> **Important:** All components (ESP32, BLDC driver, MOSFET module) **must share a common ground (GND)**. The CLK signal is voltage-referenced — without a shared ground the driver cannot interpret the signal.
+
+### Wiring Diagram (T1-T3)
+
+```
+        ESP32 30-pin                     EC11 Encoder
+   ┌──────────────────┐            ┌────────────────┐
+   │                  │            │  VCC (+)  ──────→ 3.3V
+   │ GPIO26 ──────────┼──→ BLDC Driver CLK/PWM_IN
+   │ GPIO32 ──────────┼──→ EC11 CLK
+   │ GPIO33 ──────────┼──→ EC11 DT
+   │ GPIO25 ──────────┼──→ EC11 SW
+   │ GND    ─┬────────┼──→ BLDC Driver GND
+   │         │        │      EC11 GND
+   │ 3.3V   ─┘        │
+   └──────────────────┘
+```
+
+### Wiring Diagram (T31)
+
+```
+        ESP32 38-pin                     EC11 Encoder
+   ┌──────────────────┐            ┌────────────────┐
+   │                  │            │  VCC (+)  ──────→ 3.3V
+   │ GPIO26 ──────────┼──→ BLDC Driver CLK/PWM_IN
+   │ GPIO27 ──────────┼──→ D4184 MOSFET → Oscillation Motor
+   │ GPIO32 ──────────┼──→ EC11 CLK
+   │ GPIO33 ──────────┼──→ EC11 DT
+   │ GPIO25 ──────────┼──→ EC11 SW
+   │ GND    ─┬────────┼──→ BLDC Driver GND
+   │         │        │      D4184 GND
+   │         │        │      Oscillation Motor GND
+   │ 3.3V   ─┘        │      EC11 GND
+   └──────────────────┘
+```
+
+> **Where to buy:** Search "BLDC fan driver board", "quạt trần BLDC", or "mạch điều khiển quạt BLDC" on Shopee, Lazada, or AliExpress. Common brands include Lishui and Vego. For the D4184 MOSFET module, search "D4184 dual MOSFET" or "mạch công tắc MOSFET D4184".
+
+---
 
 ## Software Requirements
 
-### ESPHome Installation
-
-You need Python 3.9+ and ESPHome on your computer. ESPHome compiles firmware and flashes it to the ESP32.
+### ESPHome CLI
 
 ```bash
-# Install ESPHome via pip
 pip install esphome
-
-# Verify installation
-esphome version
+esphome version   # should be 2026.4.3+
 ```
 
-> **Note for Home Assistant users:** You can use the ESPHome addon/container, but this guide assumes **command-line ESPHome** (pip install). CLI is faster for iterative development and supports parallel flashing of multiple devices.
+> Home Assistant OS users can use the ESPHome add-on. This guide assumes CLI for faster iteration and parallel multi-device flashing.
 
 ### Project Structure
 
 ```
 esp32_t_series_fan/
 ├── common/
-│   └── base.yaml         # ALL shared device logic (~180 lines)
-├── t1-fan.yaml           # Device config: just substitutions + package include
-├── t2-fan.yaml           # Same — only device_name differs
-├── t3-fan.yaml           # Same
-├── secrets.yaml          # Your WiFi credentials (gitignored)
-├── flash.ps1             # PowerShell: .\flash.ps1 t1-fan 192.168.20.201
-├── *.bat                 # Quick-flash per device
-├── ha-dashboard.md       # Home Assistant dashboard card examples
+│   ├── base.yaml                # Shared logic — frequency + duty-cycle dual mode
+│   └── base-oscillation.yaml    # base.yaml + GPIO switch for T31 oscillation
+├── t1-fan.yaml                  # T1 device config (substitutions only)
+├── t2-fan.yaml                  # T2 device config
+├── t3-fan.yaml                  # T3 device config
+├── t31-fan.yaml                 # T31 device config (duty-cycle + oscillation)
+├── ha-dashboard/                # Home Assistant dashboard YAML snippets
+│   ├── dashboard_fan_p1.md
+│   ├── dashboard_fan_p2.md
+│   ├── dashboard_fan_p8.md
+│   ├── dashboard_fan_t31.md
+│   └── 01_p*_fan_speed_control.yaml   # Auto-speed automations
+├── secrets_example.yaml         # WiFi credentials template (copy to secrets.yaml)
+├── secrets.yaml                 # Your WiFi credentials (gitignored — DO NOT COMMIT)
+├── flash.ps1                    # PowerShell: .\flash.ps1 -Device t1-fan -IP 192.168.20.201
+├── *.bat                        # Quick-flash per device
+├── README.md
 └── .gitignore
 ```
 
-**Why this structure?** All three fans share identical hardware and logic. Only the device name and friendly name differ. The `common/base.yaml` file contains ALL the device logic once — modify it, and all three fans get the update. Each `tX-fan.yaml` file is just ~20 lines of substitutions.
+**Architecture:** ESPHome `packages:` + `!include`. Each device YAML defines only `substitutions:` and includes the shared logic. Modify `common/base.yaml` once — all fans receive the update on next flash.
+
+---
 
 ## Quick Start
 
-### Step 1: Clone this repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/ngoviet/esp32-esphome-bldc-smart-fan.git
 cd esp32_t_series_fan
 ```
 
-### Step 2: Configure your WiFi
+### 2. Configure WiFi
 
-Create `secrets.yaml` (this file is gitignored — do NOT commit it):
+```bash
+cp secrets_example.yaml secrets.yaml
+```
+
+Edit `secrets.yaml` with your WiFi credentials:
 
 ```yaml
-wifi_ssid: "YourWiFiName"
+wifi_ssid: "YourWiFiSSID"
 wifi_password: "YourWiFiPassword"
 ```
 
-### Step 3: Customize GPIO pins (if needed)
+### 3. Wire the Hardware
 
-Open `t1-fan.yaml`. The default pins work for most setups but adjust if your wiring differs:
+Follow the GPIO pinout table above for your model. Double-check the shared GND connection.
 
-```yaml
-substitutions:
-  device_name: "t1-fan"
-  device_friendly_name: "T1 Fan"
-  clk_pin: "GPIO26"           # PWM output to fan driver
-  encoder_clk_pin: "GPIO32"   # EC11 CLK
-  encoder_dt_pin: "GPIO33"    # EC11 DT
-  encoder_sw_pin: "GPIO25"    # EC11 push button
-```
+### 4. Flash Firmware
 
-### Step 4: Flash the firmware
-
-**Using PowerShell (recommended):**
 ```powershell
-.\flash.ps1 t1-fan 192.168.20.201
-```
+# PowerShell (recommended)
+.\flash.ps1 -Device t1-fan -IP 192.168.20.201
 
-**Using batch file (double-click):**
-Double-click `t1-fan.bat`
-
-**Using command line:**
-```bash
+# Or double-click the .bat file
+# Or use ESPHome CLI directly:
 esphome run t1-fan.yaml --device 192.168.20.201
 ```
 
-First build takes ~2 minutes (compiles ESP-IDF + Arduino framework). Subsequent builds take ~30 seconds (incremental).
+First build takes ~2 minutes (compiles ESP-IDF + Arduino). Subsequent builds take ~30 seconds (incremental).
 
-### Step 5: Add to Home Assistant
+### 5. Add to Home Assistant
 
-The device auto-discovers via mDNS (`t1-fan.local`). Go to **Settings → Devices & Services → ESPHome** and click **Configure**. The fan appears as both a **Light** entity (speed slider) and diagnostic sensors.
+The device auto-discovers via mDNS. Navigate to **Settings → Devices & Services → ESPHome** and click **Configure**. The fan appears as a **Light** entity (speed slider) plus diagnostic sensors.
 
-### Step 6: Add a dashboard card (optional)
+### 6. Add Dashboard Cards (optional)
 
-See [ha-dashboard.md](ha-dashboard.md) for ready-to-use Mushroom Light Cards with custom styling. Each card is compact (45px height), shows the fan icon, speed slider, and current state.
+Copy the YAML from `ha-dashboard/` into your HA dashboard raw editor. Each card uses `mushroom-light-card` + `mushroom-legacy-template-card` with custom CSS for a compact, modern look.
 
-## Multi-Fan Setup
-
-For additional fans (T2, T3, etc.), simply copy `t1-fan.yaml`:
-
-```bash
-cp t1-fan.yaml t2-fan.yaml
-```
-
-Edit `t2-fan.yaml` and change only these two lines:
-```yaml
-  device_name: "t2-fan"
-  device_friendly_name: "T2 Fan"
-```
-
-Flash:
-```bash
-.\flash.ps1 t2-fan 192.168.20.178
-```
-
-All other logic is inherited from `common/base.yaml`.
-
-## Customization
-
-### Adjusting Frequency Range
-
-Different BLDC drivers use different frequency ranges. Edit the `substitutions:` block in your device YAML:
-
-```yaml
-  freq_min: "100"    # Minimum frequency (Hz) at 1% speed
-  freq_max: "400"    # Maximum frequency (Hz) at 100% speed
-```
-
-### Fixing Encoder Bounce
-
-Some EC11 variants produce 4 counts per detent instead of 1. If turning the knob causes erratic jumps, change:
-
-```yaml
-  encoder_resolution: "4"    # Hardware pulse division (default: "1")
-```
-
-The resolution setting enables the hardware debounce counter on the ESP32 rotary encoder peripheral.
-
-### Updating Firmware Version
-
-Increment `firmware_version` before each flash for easy tracking in Home Assistant:
-
-```yaml
-  firmware_version: "2.0.3"
-```
-
-The version appears in HA as `sensor.<device>_firmware_version`.
-
-## Tuning Guide
-
-| Parameter | Default | When to Change |
-|-----------|---------|----------------|
-| `encoder_resolution` | `1` | EC11 bounces 4x per detent |
-| `freq_min` / `freq_max` | `100` / `400` | Different BLDC driver spec |
-| `default_frequency` | `150` | Startup speed after first flash |
-| `logger_baud_rate` | `115200` | USB serial debugging |
-| `clk_pin` | `GPIO26` | Different ESP32 pinout |
-| `clk_channel` | `0` | If channel 0 conflicts with other peripherals |
+---
 
 ## Home Assistant Entities
 
+### T1-T3 Entities
+
 | Entity | Type | Description |
 |--------|------|-------------|
-| `light.tX_fan_speed` | Light | Speed slider (1-100% → 103-400Hz) |
-| `sensor.tX_fan_fan_frequency` | Sensor | Actual CLK frequency in Hz |
-| `sensor.tX_fan_firmware_version` | Sensor | Firmware version |
-| `sensor.tX_fan_wifi_rssi` | Sensor | WiFi signal strength (dBm) |
-| `text_sensor.tX_fan_wifi_ip` | Text | IP address |
-| `text_sensor.tX_fan_wifi_ssid` | Text | Connected WiFi name |
-| `binary_sensor.tX_fan_nut_an_ecc11` | Binary | Encoder button state |
-| `button.tX_fan_restart_thiet_bi` | Button | Soft restart |
+| `light.<device>_speed` | Light | Speed slider (1–100% → 103–400 Hz) |
+| `sensor.<device>_fan_frequency` | Sensor | Actual CLK frequency in Hz |
+| `sensor.<device>_firmware_version` | Sensor | Firmware version string |
+| `sensor.<device>_wifi_rssi` | Sensor | WiFi signal strength (dBm) |
+| `text_sensor.<device>_wifi_ip` | Text Sensor | Device IP address |
+| `text_sensor.<device>_wifi_ssid` | Text Sensor | Connected WiFi SSID |
+| `button.<device>_restart_thiet_bi` | Button | Soft restart |
 
-## Automation Ideas
+### T31 Entities (additional)
 
-### Auto-off after time
+| Entity | Type | Description |
+|--------|------|-------------|
+| `sensor.t31_fan_fan_duty` | Sensor | Duty cycle % (actual speed parameter) |
+| `switch.t31_fan_dao_gio` | Switch | Oscillation swing toggle (GPIO27 MOSFET) |
+
+---
+
+## Multi-Fan Setup
+
+Copy an existing device config and change the name:
+
+```bash
+cp t1-fan.yaml t4-fan.yaml
+```
+
+Edit `t4-fan.yaml`:
+
 ```yaml
-alias: "Turn off T1 Fan after 2 hours"
+substitutions:
+  device_name: "t4-fan"
+  device_friendly_name: "T4 Fan"
+  # ... same GPIO pins, frequency range, etc.
+```
+
+Flash:
+
+```bash
+.\flash.ps1 -Device t4-fan -IP 192.168.20.xxx
+```
+
+All behavior is inherited from `common/base.yaml`. No logic duplication.
+
+---
+
+## Configuration Reference
+
+### Substitutions (per-device)
+
+| Parameter | T1-T3 Default | T31 Default | Description |
+|-----------|--------------|-------------|-------------|
+| `device_name` | `t1-fan` | `t31-fan` | ESPHome node name (no spaces) |
+| `clk_pin` | `GPIO26` | `GPIO26` | LEDC PWM output pin |
+| `clk_channel` | `0` | `8` | LEDC channel (T31 uses LS channel to avoid glitch) |
+| `clk_inverted` | `false` | `true` | Invert LEDC output polarity |
+| `speed_duty_mode_val` | `false` | `true` | `true` = duty-cycle mode, `false` = frequency mode |
+| `default_frequency` | `150` | `150` | LEDC base frequency (Hz) |
+| `freq_min` | `100` | `100` | Minimum frequency (Hz) — frequency mode only |
+| `freq_max` | `400` | `400` | Maximum frequency (Hz) — frequency mode only |
+| `encoder_resolution` | `1` | `1` | EC11 pulses per detent (use `4` if bouncy) |
+| `speed_param_name` | `Fan Frequency` | `Fan Duty` | Diagnostic sensor name |
+| `speed_param_unit` | `Hz` | `%` | Diagnostic sensor unit |
+| `firmware_version` | `2.0.2` | `2.0.3` | Version shown in HA |
+
+---
+
+## Automation Examples
+
+### Auto-off Timer
+
+```yaml
+alias: "Turn off fan after 2 hours"
 trigger:
   - platform: state
     entity_id: light.t1_fan_speed
@@ -280,9 +320,10 @@ action:
       entity_id: light.t1_fan_speed
 ```
 
-### Fan speed based on temperature
+### Temperature-Based Speed (Frequency Mode)
+
 ```yaml
-alias: "Fan speed by room temp"
+alias: "Fan speed by room temperature"
 trigger:
   - platform: numeric_state
     entity_id: sensor.room_temperature
@@ -292,79 +333,104 @@ action:
     target:
       entity_id: light.t1_fan_speed
     data:
-      brightness_pct: "{{ (trigger.to_state.state | float - 25) / 10 * 100 | round(0) }}"
+      brightness_pct: >
+        {{ ((trigger.to_state.state | float - 25) / 10 * 100) | round(0) }}
 ```
 
-### Button press → toggle all fans
-```yaml
-alias: "Toggle all fans"
-action:
-  - service: light.toggle
-    target:
-      entity_id:
-        - light.t1_fan_speed
-        - light.t2_fan_speed
-        - light.t3_fan_speed
-```
+### Power-Based Auto Speed (see ha-dashboard/)
+
+The `ha-dashboard/01_p*_fan_speed_control.yaml` files contain ready-to-use automations that map device power consumption to fan speed — useful for cooling mining rigs, servers, or electrical panels.
+
+---
+
+## Tuning Guide
+
+| Symptom | Parameter | Change |
+|---------|-----------|--------|
+| Knob jumps 4 steps per click | `encoder_resolution` | Set to `4` |
+| Fan driver uses different frequency range | `freq_min` / `freq_max` | Match driver datasheet |
+| T31 minimum speed too weak to start | Write lambda duty formula | Increase `0.30f` base (currently 30%) |
+| T31 stops too abruptly at max | Duty cap | Adjust `0.995f` (currently 99.5%) |
+| Flash fails (OTA timeout) | — | Use serial flash (COM port) for first flash |
+
+---
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| Fan doesn't spin | Check GND shared between ESP32 and driver. Check PWM_IN wiring. |
-| Speed jumps erratically | Set `encoder_resolution: "4"` in substitutions. |
-| Fan spins at boot when should be off | Update to v2.0.2+ (fixed `on_boot` guard). |
-| Fan stops briefly when changing speed | Normal — LEDC timer reconfigures on frequency change (~1ms gap). |
-| HA shows wrong icon | This is expected — ESPHome has no native variable-frequency fan platform. The `mdi:fan` icon is already set. |
-| "No such file: secrets.yaml" | Create `secrets.yaml` with your WiFi credentials. See Step 2 in Quick Start. |
-| Build fails after pulling updated code | Delete `.esphome/build/` directory and recompile. |
+| Problem | Likely Cause | Fix |
+|---------|-------------|-----|
+| Fan doesn't spin | No shared GND | Connect ESP32 GND ↔ BLDC driver GND |
+| Speed jumps erratically | Encoder bounce | Set `encoder_resolution: "4"` |
+| Fan creeps when "OFF" (T31) | Micro-duty too high | Lower `0.005f` to `0.001f` in OFF branch |
+| Speed dips when changing speed (T31) | `ledc_stop()` glitch at 0% or 100% | Ensure duty range is 0.5%–99.5% |
+| "No such file: secrets.yaml" | Missing secrets file | Copy `secrets_example.yaml` → `secrets.yaml` |
+| Build fails after pull | Stale build cache | Delete `.esphome/build/` and recompile |
+| OTA fails (connection timeout) | WiFi signal too weak | Move ESP32 closer to AP, or flash via serial |
 
-## Technical Details
+---
 
-### Speed Control Algorithm
+## Technical Deep Dive
+
+### Speed Algorithm — Frequency Mode (T1-T3)
 
 ```
-Frequency (Hz) = (Brightness × 300) + 100
+frequency = (brightness × 300) + 100
 
 Where:
-  Brightness: 0.0–1.0 (0%–100% HA slider)
-  Result: 100–400 Hz, always 50% duty cycle
+  brightness = 0.0 – 1.0 (Home Assistant slider)
+  Result: 100 – 400 Hz, constant 50% duty
 ```
 
-- Below 1% brightness → Fan OFF (PWM output stopped)
-- 1% = 103 Hz, 50% = 250 Hz, 100% = 400 Hz
-- Delta = 300 Hz → each 1% step = exactly 3 Hz (integer, no rounding)
+- Below 1% brightness → Fan OFF (PWM output disabled)
+- Delta = 300 Hz → each 1% step = exactly 3 Hz (integer math, zero rounding)
+- `apply_freq` script reconfigures LEDC timer atomically with `mode: restart`
 
-### Anti-Flicker Sync Mechanism
+### Speed Algorithm — Duty-Cycle Mode (T31)
 
-When you turn the physical knob:
-1. A 2-second lockout prevents Home Assistant from overwriting the knob
-2. After 2 seconds of no knob changes, HA state re-syncs the knob counter
+```
+duty = 0.30 + (brightness × 0.70)
+duty clamped to [0.005, 0.995]
 
-This prevents the "flicker-fight" where you turn the knob and HA simultaneously changes it back. Uses **unsigned subtraction** for millis() rollover safety (~50-day uptime).
+Where:
+  brightness = 0.0 – 1.0
+  Result: 30% – 99.5% duty at fixed 150 Hz (inverted: HIGH = stop)
+```
 
-### Boot Behavior
+- OFF state: 0.5% duty → ~33 µs LOW pulse per 6.67 ms period → motor effectively stopped
+- LEDC timer never calls `ledc_stop()` — clean transitions across entire range
+- `syncing_from_ha` flag prevents encoder callback double-write when HA adjusts speed
 
-- `freq_hz` global persists across power cycles (flash storage)
-- Light state persists (ESPHome `RESTORE_DEFAULT_OFF`)
-- `on_boot` at priority 200: only re-applies frequency if light was ON
-- If light was OFF → fan stays off on boot
+### Anti-Flicker Sync
+
+1. Physical knob turn → `disable_sync_until = millis()` → 2-second HA lockout
+2. HA brightness change → `syncing_from_ha = true` → encoder callback suppressed → single LEDC write
+3. Rollover-safe: `millis() - disable_sync_until >= 2000` uses unsigned subtraction
+
+### LEDC Channel Selection
+
+T31 uses **channel 8** (low-speed) to avoid a known ESP32 hardware issue where high-speed channels (0–7) silently ignore `ledcWrite()` updates within the same PWM period. Low-speed channels commit changes immediately — critical for smooth duty-cycle transitions at 150 Hz.
+
+---
 
 ## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make changes to `common/base.yaml` (affects all devices)
-4. Test on your hardware
+2. Create a feature branch (`git checkout -b feat/my-feature`)
+3. Make changes — prefer `common/base.yaml` for shared logic, device YAML for model-specific changes
+4. Test on real hardware
 5. Submit a pull request
+
+---
 
 ## Credits
 
 - **Author:** [ngoviet](https://github.com/ngoviet)
 - **Support:** [Buy Me a Coffee](https://buymeacoffee.com/ngoviet)
-- Built with [ESPHome](https://esphome.io/)
+- Built with [ESPHome](https://esphome.io/) (Arduino framework on ESP-IDF)
 - Inspired by the Vietnamese smart home community
+
+---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) file.
+MIT License — see [LICENSE](LICENSE).
