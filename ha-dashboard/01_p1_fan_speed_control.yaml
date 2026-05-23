@@ -1,0 +1,123 @@
+# ============================================================
+# P1 Fan Speed Control — Điều khiển tốc độ quạt theo tổng công suất
+# ============================================================
+# Dùng tổng công suất P1 + P4 + HA để điều khiển quạt P1.
+# Map 10-300W → brightness_pct 10-25.
+#
+# Sửa tham số: vào HA Settings > Devices > Helpers, tìm "P1 Fan ..."
+# HOẶC sửa trực tiếp giá trị mặc định (initial) ở input_number bên dưới.
+#
+# Tham số:
+#   off_threshold : dưới mức này → tắt quạt
+#   min_power     : cận dưới dải map
+#   max_power     : cận trên dải map
+#   min_speed     : brightness_pct tại min_power
+#   max_speed     : brightness_pct tại max_power (và khi vượt max_power)
+# ============================================================
+
+input_boolean:
+  p1_fan_auto_speed:
+    name: "P1 Fan — Auto Speed"
+    initial: true
+    icon: mdi:speedometer
+
+input_number:
+  p1_fan_off_threshold:
+    name: "P1 Fan — Ngưỡng tắt (W)"
+    min: 0
+    max: 5000
+    step: 1
+    mode: box
+    unit_of_measurement: "W"
+    initial: 20
+
+  p1_fan_min_power:
+    name: "P1 Fan — Min Power (W)"
+    min: 0
+    max: 5000
+    step: 1
+    mode: box
+    unit_of_measurement: "W"
+    initial: 10
+
+  p1_fan_max_power:
+    name: "P1 Fan — Max Power (W)"
+    min: 0
+    max: 5000
+    step: 1
+    mode: box
+    unit_of_measurement: "W"
+    initial: 300
+
+  p1_fan_min_speed:
+    name: "P1 Fan — Min Speed (%)"
+    min: 1
+    max: 100
+    step: 1
+    mode: slider
+    unit_of_measurement: "%"
+    initial: 10
+
+  p1_fan_max_speed:
+    name: "P1 Fan — Max Speed (%)"
+    min: 1
+    max: 100
+    step: 1
+    mode: slider
+    unit_of_measurement: "%"
+    initial: 25
+
+automation:
+  - id: "p1_fan_speed_control"
+    alias: "P1 Fan Speed Control"
+    triggers:
+      - trigger: state
+        entity_id:
+          - sensor.p1_power
+          - sensor.p4_power
+          - sensor.ha_power
+      - trigger: state
+        entity_id: input_boolean.p1_fan_auto_speed
+        to: "on"
+      - trigger: time_pattern
+        minutes: "/5"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.p1_fan_auto_speed
+        state: "on"
+    actions:
+      - variables:
+          min_p: "{{ states('input_number.p1_fan_min_power') | float(0) }}"
+          max_p: "{{ states('input_number.p1_fan_max_power') | float(0) }}"
+          min_s: "{{ states('input_number.p1_fan_min_speed') | float(0) }}"
+          max_s: "{{ states('input_number.p1_fan_max_speed') | float(0) }}"
+          off_t: "{{ states('input_number.p1_fan_off_threshold') | float(0) }}"
+          p: "{{ states('sensor.p1_power') | float(0) + states('sensor.p4_power') | float(0) + states('sensor.ha_power') | float(0) }}"
+          speed: >
+            {%- if p >= max_p -%}
+              {{ max_s | int }}
+            {%- elif p <= min_p -%}
+              {{ min_s | int }}
+            {%- else -%}
+              {{ ((p - min_p) / (max_p - min_p) * (max_s - min_s) + min_s) | round(0, 'common') | int }}
+            {%- endif -%}
+          current_pct: "{{ state_attr('light.p1_fan_speed', 'brightness') | int(0) * 100 // 255 }}"
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: "{{ p | float(0) >= off_t and speed | int != current_pct | int }}"
+            sequence:
+              - action: light.turn_on
+                target:
+                  entity_id: light.p1_fan_speed
+                data:
+                  brightness_pct: "{{ speed }}"
+          - conditions:
+              - condition: template
+                value_template: "{{ p | float(0) < off_t and is_state('light.p1_fan_speed', 'on') }}"
+            sequence:
+              - action: light.turn_off
+                target:
+                  entity_id: light.p1_fan_speed
+                data: {}
+    mode: restart
