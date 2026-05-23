@@ -11,7 +11,10 @@ esphome:
     priority: 200
     then:
       - lambda: |-
-          if (id(fan_light).current_values.is_on()) {
+          if (id(speed_duty_mode)) {
+            // Khởi động LEDC ở micro-duty, tránh ledc_stop gây glitch
+            id(clk_out).set_level(0.005f);
+          } else if (id(fan_light).current_values.is_on()) {
             id(apply_freq).execute();
           }
 
@@ -49,6 +52,14 @@ globals:
   - id: disable_sync_until
     type: uint32_t
     initial_value: '0'
+  - id: speed_duty_mode
+    type: bool
+    restore_value: no
+    initial_value: '${speed_duty_mode_val}'
+  - id: syncing_from_ha
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 # ---------- XUẤT XUNG CLK THỰC TẾ ----------
 output:
@@ -57,7 +68,7 @@ output:
     pin: ${clk_pin}
     channel: ${clk_channel}
     frequency: ${default_frequency}Hz
-    inverted: false
+    inverted: ${clk_inverted}
 
 # ---------- TEMPLATE OUTPUT (CHUYỂN % -> HZ) ----------
 # Output ảo này nhận mức thay đổi độ sáng 0.0 -> 1.0 (0-100%) từ Light
@@ -71,22 +82,35 @@ output:
           if (elapsed >= 2000) {
             int expected_knob = (int)((state * 100.0f) / 3.0f + 0.5f);
             if (id(knob).state != expected_knob) {
+              id(disable_sync_until) = millis();
+              id(syncing_from_ha) = true;
               id(knob).set_value(expected_knob);
+              id(syncing_from_ha) = false;
             }
           }
 
           // state nhận giá trị từ 0.0 đến 1.0
-          if (state <= 0.01) {
-            // Độ sáng < 1% (tắt) -> dừng xung PWM
-            id(freq_hz) = 0;
-            id(clk_out).set_level(0.0f);
+          if (id(speed_duty_mode)) {
+            // Chế độ duty-cycle: brightness 1-100% → duty 30-100%
+            // Dùng micro-duty 0.5% khi OFF thay vì 0% — tránh ledc_stop() gây glitch
+            if (state <= 0.01) {
+              id(freq_hz) = 0;
+              id(clk_out).set_level(0.005f);
+            } else {
+              float duty = 0.30f + (state * 0.70f);
+              if (duty > 0.995f) duty = 0.995f;
+              id(freq_hz) = (int)(duty * 100.0f);
+              id(clk_out).set_level(duty);
+            }
           } else {
-            // Dải hoạt động chuẩn: ${freq_min}Hz -> ${freq_max}Hz
-            // Chênh lệch (delta) = ${freq_max} - ${freq_min} = 300
-            // Nhờ đó, mỗi 1% độ sáng sẽ tăng đúng 3Hz (là số nguyên)
-            id(freq_hz) = (int)(state * (float)(${freq_max} - ${freq_min})) + ${freq_min};
-            // Set tần số mới + duty 50%
-            id(apply_freq).execute();
+            // Chế độ tần số: 100-400Hz, duty 50%
+            if (state <= 0.01) {
+              id(freq_hz) = 0;
+              id(clk_out).set_level(0.0f);
+            } else {
+              id(freq_hz) = (int)(state * (float)(${freq_max} - ${freq_min})) + ${freq_min};
+              id(apply_freq).execute();
+            }
           }
 
 # ---------- SCRIPT ÁP TẦN SỐ VÀ DUTY 50% ----------
@@ -135,6 +159,8 @@ sensor:
     max_value: 33
     on_value:
       - lambda: |-
+          if (id(syncing_from_ha)) return;
+
           id(disable_sync_until) = millis();
 
           float b = (x * 3.0f) / 100.0f;
@@ -150,12 +176,12 @@ sensor:
           }
     internal: true
 
-  # Fan frequency display
+  # Fan speed parameter (duty % for T31, Hz for T1-T3)
   - platform: template
-    name: "Fan Frequency"
+    name: "${speed_param_name}"
     lambda: "return id(freq_hz);"
     update_interval: 5s
-    unit_of_measurement: "Hz"
+    unit_of_measurement: "${speed_param_unit}"
     entity_category: diagnostic
     icon: "mdi:sine-wave"
 

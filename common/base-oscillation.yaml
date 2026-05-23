@@ -1,0 +1,18 @@
+# ===========================================
+# T31 Fan — Kế thừa base + Đảo Gió MOSFET D4184
+# ===========================================
+# Dùng ESPHome packages include base.yaml, chỉ thêm switch đảo gió.
+# inverted: true để quạt dừng khi OFF (duty 0% = HIGH).
+# KHÔNG dùng ledcDetach/ledcAttach (gây crash với ESPHome).
+
+packages:
+  base: !include base.yaml
+
+# ---------- ĐẢO GIÓ (MOSFET D4184) ----------
+switch:
+  - platform: gpio
+    name: "Đảo gió"
+    id: oscillation_switch
+    pin: ${oscillation_pin}
+    restore_mode: ALWAYS_OFF
+    icon: "mdi:rotate-360"

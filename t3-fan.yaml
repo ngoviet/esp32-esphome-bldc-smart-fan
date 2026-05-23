@@ -11,6 +11,8 @@ substitutions:
   encoder_sw_pin: "GPIO25"
 
   # PWM Frequency
+  clk_inverted: "false"
+  speed_duty_mode_val: "false"
   default_frequency: "150"
   freq_min: "100"
   freq_max: "400"
@@ -21,6 +23,10 @@ substitutions:
   # Misc
   logger_baud_rate: "115200"
   firmware_version: "2.0.2"
+
+  # Speed display
+  speed_param_name: "Fan Frequency"
+  speed_param_unit: "Hz"
 
 packages:
   base: !include common/base.yaml

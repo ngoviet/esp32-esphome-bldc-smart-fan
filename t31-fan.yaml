@@ -1,0 +1,33 @@
+# ========== T31 FAN CONFIG ==========
+substitutions:
+  device_name: "t31-fan"
+  device_friendly_name: "T31 Fan"
+
+  # GPIO (board mới không hỏng chân nào)
+  clk_pin: "GPIO26"
+  clk_channel: "8"
+  encoder_clk_pin: "GPIO32"
+  encoder_dt_pin: "GPIO33"
+  encoder_sw_pin: "GPIO25"
+  oscillation_pin: "GPIO27"
+
+  # PWM Frequency
+  clk_inverted: "true"
+  speed_duty_mode_val: "true"
+  default_frequency: "150"
+  freq_min: "100"
+  freq_max: "400"
+
+  # Encoder
+  encoder_resolution: "1"
+
+  # Misc
+  logger_baud_rate: "115200"
+  firmware_version: "2.0.3"
+
+  # Speed display
+  speed_param_name: "Fan Duty"
+  speed_param_unit: "%"
+
+packages:
+  base-oscillation: !include common/base-oscillation.yaml
