@@ -96,6 +96,7 @@ output:
             if (state <= 0.01) {
               id(freq_hz) = 0;
               id(clk_out).set_level(0.005f);
+              ${on_fan_off_action}
             } else {
               float duty = 0.30f + (state * 0.70f);
               if (duty > 0.995f) duty = 0.995f;

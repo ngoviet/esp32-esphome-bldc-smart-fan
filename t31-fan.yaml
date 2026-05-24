@@ -29,5 +29,8 @@ substitutions:
   speed_param_name: "Fan Duty"
   speed_param_unit: "%"
 
+  # Auto-off oscillation when fan stops
+  on_fan_off_action: "id(oscillation_switch).turn_off();"
+
 packages:
   base-oscillation: !include common/base-oscillation.yaml
