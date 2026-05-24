@@ -11,10 +11,7 @@ esphome:
     priority: 200
     then:
       - lambda: |-
-          if (id(speed_duty_mode)) {
-            // Khởi động LEDC ở micro-duty, tránh ledc_stop gây glitch
-            id(clk_out).set_level(0.005f);
-          } else if (id(fan_light).current_values.is_on()) {
+          if (!id(speed_duty_mode) && id(fan_light).current_values.is_on()) {
             id(apply_freq).execute();
           }
 
@@ -60,6 +57,10 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: ledc_running
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 # ---------- XUẤT XUNG CLK THỰC TẾ ----------
 output:
@@ -91,17 +92,22 @@ output:
 
           // state nhận giá trị từ 0.0 đến 1.0
           if (id(speed_duty_mode)) {
-            // Chế độ duty-cycle: brightness 1-100% → duty 30-100%
-            // Dùng micro-duty 0.5% khi OFF thay vì 0% — tránh ledc_stop() gây glitch
+            // Chế độ duty-cycle: brightness 1-100% → duty 30-99.5%
             if (state <= 0.01) {
               id(freq_hz) = 0;
-              id(clk_out).set_level(0.005f);
+              id(clk_out).set_level(0.0f);
+              id(ledc_running) = false;
               ${on_fan_off_action}
             } else {
               float duty = 0.30f + (state * 0.70f);
               if (duty > 0.995f) duty = 0.995f;
               id(freq_hz) = (int)(duty * 100.0f);
-              id(clk_out).set_level(duty);
+              if (!id(ledc_running)) {
+                id(apply_freq).execute();
+                id(ledc_running) = true;
+              } else {
+                id(clk_out).set_level(duty);
+              }
             }
           } else {
             // Chế độ tần số: 100-400Hz, duty 50%
@@ -114,17 +120,28 @@ output:
             }
           }
 
-# ---------- SCRIPT ÁP TẦN SỐ VÀ DUTY 50% ----------
+# ---------- SCRIPT ÁP TẦN SỐ / DUTY ----------
 script:
   - id: apply_freq
     mode: restart
     then:
-      - output.ledc.set_frequency:
-          id: clk_out
-          frequency: !lambda "return id(freq_hz);"
-      - output.set_level:
-          id: clk_out
-          level: 50%
+      - if:
+          condition:
+            lambda: 'return id(speed_duty_mode);'
+          then:
+            - output.ledc.set_frequency:
+                id: clk_out
+                frequency: !lambda 'return ${default_frequency};'
+            - output.set_level:
+                id: clk_out
+                level: !lambda 'return id(freq_hz) / 100.0f;'
+          else:
+            - output.ledc.set_frequency:
+                id: clk_out
+                frequency: !lambda 'return id(freq_hz);'
+            - output.set_level:
+                id: clk_out
+                level: 50%
 
 # ---------- ENTITY ĐÈN / QUẠT TRONG HA ----------
 light:
