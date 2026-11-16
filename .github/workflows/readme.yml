@@ -8,4 +8,4 @@ on:
 
 jobs:
   readme:
-    uses: ngoviet/.github/.github/workflows/readme.yml@main
+    uses: ngoviet/readme-axi/.github/workflows/readme.yml@main
