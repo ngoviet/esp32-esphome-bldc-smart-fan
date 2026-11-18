@@ -1,0 +1,17 @@
+# ========== MT2 FAN CONFIG ==========
+# DỰNG LẠI ngày 18/11/2026: bản gốc được build trên máy khác (ESPHome 2026.4.3,
+# 03/07/2026, firmware 2.1.2) và không có trong repo.
+# Bằng chứng từ Home Assistant (đọc 18/11/2026): board esp32dev, chế độ tần số
+# (sensor "Fan Frequency"), có nút EC11, IP 192.168.20.189. Config entry trong HA
+# mang tên "m1-fan". Bộ entity giống mt1-fan (mặc định của common/base.yaml),
+# thêm một sensor Uptime nên khai báo lại ở dưới.
+# Lần nạp đầu từ file này sẽ lên firmware_version theo common/base.yaml.
+substitutions:
+  device_name: "mt2-fan"
+
+packages:
+  base: !include ../../common/base.yaml
+
+sensor:
+  - platform: uptime
+    name: "Uptime"

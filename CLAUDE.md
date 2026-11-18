@@ -18,6 +18,7 @@ esp32_t_series_fan/
   common/secrets.yaml    # WiFi credentials (gitignored) — must sit beside wifi.yaml
   devices/<name>/        # One folder per device: <name>.yaml + flash.bat (+ .esphome/ cache)
     t1-fan, mt1-fan,     # Frequency mode — only device_name
+    mt2-fan              #   (mt2 also adds an uptime sensor; rebuilt 2026-11-18)
     pc1-fan, pc8-fan     #   (pc8 also sets board: nodemcu-32s)
     t2-fan, modem-fan    # Duty 25 kHz Nidec (inverted)
     t31-fan              # Duty + oscillation (base-oscillation.yaml)
@@ -41,13 +42,16 @@ esp32_t_series_fan/
 .\flash.ps1 t1-fan 192.168.20.201   # T1
 .\flash.ps1 t2-fan 192.168.20.178   # T2
 .\flash.ps1 mt1-fan 192.168.20.155  # MT1 (formerly T3)
+.\flash.ps1 mt2-fan 192.168.20.189  # MT2 — HA config entry is named "m1-fan"
 .\flash.ps1 t31-fan 192.168.20.177  # T31
 .\flash.ps1 modem-fan 192.168.20.187
 .\flash.ps1 pc1-fan 192.168.20.179  # P1 — HA light.tang_3_pc1_fan_speed
 .\flash.ps1 pc8-fan 192.168.20.191  # P8 — HA light.pc8_fan_speed
 ```
 
-Not in repo (built on another machine, ESPHome 2026.4.3): `mt2-fan` (.189), `t32-fan` (.183, experimental 3.32).
+`mt2-fan` was built on another machine (ESPHome 2026.4.3, firmware 2.1.2) and its YAML was lost; `devices/mt2-fan/` was **rebuilt on 2026-11-18** from Home Assistant evidence (board esp32dev, frequency mode, EC11 button, uptime sensor) and validated with `esphome config`. The first flash from it moves the device to the current `firmware_version`.
+
+Still not in repo (built on another machine): `t32-fan` (.183, experimental 3.32).
 
 Double-click `devices\<name>\flash.bat` for quick flash.
 

@@ -393,6 +393,7 @@ esp32-esphome-bldc-smart-fan/
 ├── devices/                     # One folder per device: <name>.yaml + flash.bat
 │   ├── t1-fan/                  # Frequency mode — defaults only
 │   ├── mt1-fan/                 # Frequency mode — replaces old T3
+│   ├── mt2-fan/                 # Frequency mode + uptime sensor — rebuilt 2026-11-18 (original YAML lost)
 │   ├── pc1-fan/                 # Frequency mode — PC1 cooling
 │   ├── pc8-fan/                 # Frequency mode, board nodemcu-32s — PC8 cooling
 │   ├── t2-fan/                  # Duty mode 25 kHz (Nidec, inverted PWM)

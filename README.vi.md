@@ -393,6 +393,7 @@ esp32-esphome-bldc-smart-fan/
 ├── devices/                     # Mỗi thiết bị một thư mục: <tên>.yaml + flash.bat
 │   ├── t1-fan/                  # Chế độ tần số — chỉ dùng mặc định
 │   ├── mt1-fan/                 # Chế độ tần số — thay T3 cũ
+│   ├── mt2-fan/                 # Chế độ tần số + sensor uptime — dựng lại 18/11/2026 (mất YAML gốc)
 │   ├── pc1-fan/                 # Chế độ tần số — làm mát PC1
 │   ├── pc8-fan/                 # Chế độ tần số, bo nodemcu-32s — làm mát PC8
 │   ├── t2-fan/                  # Chế độ duty 25 kHz (Nidec, PWM đảo)
