@@ -1,9 +1,47 @@
 # ===========================================
 # T-Series Fan — Shared Device Logic (ESPHome)
 # ===========================================
-# This file is shared across t1-fan, t2-fan, t3-fan via ESPHome packages.
-# All substitutions are defined in the per-device YAML files.
+# This file is shared across t1-fan, t2-fan, t31-fan, mt1-fan, modem-fan via ESPHome packages.
+# Defaults live in `substitutions:` below; per-device YAML files override only what differs.
 # ===========================================
+
+substitutions:
+  # Giá trị mặc định = quạt chế độ tần số (T1/MT1). File thiết bị chỉ ghi phần KHÁC
+  # mặc định — substitution trong file chính đè lên substitution của package.
+
+  # Board PlatformIO (PC8 dùng nodemcu-32s)
+  board: "esp32dev"
+
+  # GPIO
+  clk_pin: "GPIO26"
+  clk_channel: "0"
+  encoder_clk_pin: "GPIO32"
+  encoder_dt_pin: "GPIO33"
+  encoder_sw_pin: "GPIO25"
+
+  # Xung CLK: false = chế độ tần số 100-320Hz duty 50%, true = chế độ duty
+  clk_inverted: "false"
+  speed_duty_mode_val: "false"
+  default_frequency: "150"
+  freq_min: "100"
+  freq_max: "320"  # 400Hz quá nhanh — hạ trần 2026-10-20
+
+  encoder_resolution: "1"
+  logger_baud_rate: "115200"
+  firmware_version: "2.2.0"
+
+  # Cảm biến hiển thị tốc độ
+  speed_param_name: "Fan Frequency"
+  speed_param_unit: "Hz"
+
+  # Duty mode mapping: false = duty 30-99.5% (T31), true = PWM đảo (modem-fan Nidec)
+  duty_inverted_speed_val: "false"
+  # Sàn duty tối thiểu (chỉ áp dụng nhánh duty-inverted). 0.0 = không sàn.
+  duty_min_scale_val: "0.0"
+  # Hệ số giới hạn max duty (chỉ áp dụng nhánh duty-inverted). 1.0 = không giới hạn.
+  duty_max_scale_val: "1.0"
+  # Action khi fan tắt (T31 dùng để tắt oscillation; modem-fan để trống)
+  on_fan_off_action: ""
 
 esphome:
   name: ${device_name}
@@ -16,17 +54,16 @@ esphome:
           }
 
 esp32:
-  board: esp32dev
+  board: ${board}
   framework:
     type: arduino
 
 # ---------- WIFI CONFIG ----------
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
+# ssid/password/fast_connect nằm trong wifi.yaml (dùng chung với motor-test)
+packages:
+  wifi: !include wifi.yaml
 
-  power_save_mode: none
-  fast_connect: true
+wifi:
   reboot_timeout: 30min
 
 # ---------- LOGGING & API ----------
@@ -92,13 +129,29 @@ output:
 
           // state nhận giá trị từ 0.0 đến 1.0
           if (id(speed_duty_mode)) {
-            // Chế độ duty-cycle: brightness 1-100% → duty 30-99.5%
+            // Chế độ duty-cycle
             if (state <= 0.01) {
               id(freq_hz) = 0;
               id(clk_out).set_level(0.0f);
               id(ledc_running) = false;
               ${on_fan_off_action}
+            } else if (${duty_inverted_speed_val}) {
+              // PWM active-low (Nidec): inverted pin -> set_level(x) = pin (1-x).
+              // brightness -> level TRỰC TIẾP: 100% -> set_level(1) -> pin LOW = quay max.
+              // Tắt (set_level 0) -> pin HIGH = dừng. KHÔNG đảo trong lambda (đảo 2 lần = ngược).
+              // duty_min_scale_val: sàn duty tối thiểu (VD 0.26 = 26%) — duty thấp quá quạt ko quay nổi.
+              // duty_max_scale_val: trần duty tối đa (VD 0.90 = 90%).
+              // Mapping: state ~0.01 -> duty_min, state 1.0 -> duty_max.
+              float duty = (float)${duty_min_scale_val} + state * ((float)${duty_max_scale_val} - (float)${duty_min_scale_val});
+              id(freq_hz) = (int)(duty * 100.0f);
+              if (!id(ledc_running)) {
+                id(apply_freq).execute();
+                id(ledc_running) = true;
+              } else {
+                id(clk_out).set_level(duty);
+              }
             } else {
+              // T31: brightness 1-100% → duty 30-99.5%
               float duty = 0.30f + (state * 0.70f);
               if (duty > 0.995f) duty = 0.995f;
               id(freq_hz) = (int)(duty * 100.0f);
@@ -110,7 +163,7 @@ output:
               }
             }
           } else {
-            // Chế độ tần số: 100-400Hz, duty 50%
+            // Chế độ tần số: freq_min-freq_max (100-320Hz), duty 50%
             if (state <= 0.01) {
               id(freq_hz) = 0;
               id(clk_out).set_level(0.0f);

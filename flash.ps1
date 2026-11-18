@@ -9,11 +9,15 @@ param(
     [string]$IP
 )
 
-$yamlFile = "$Device.yaml"
+$deviceDir = Join-Path $PSScriptRoot "devices\$Device"
+$yamlFile = Join-Path $deviceDir "$Device.yaml"
 if (-not (Test-Path $yamlFile)) {
     Write-Error "File not found: $yamlFile"
     exit 1
 }
 
+# Chạy trong thư mục thiết bị: build cache .esphome/ nằm cạnh file YAML
 Write-Host "Flashing $Device to $IP ..." -ForegroundColor Cyan
-esphome run $yamlFile --device $IP
+$env:ESPHOME_ESP_IDF_PREFIX = "C:\ESPHome\idf"
+Push-Location $deviceDir
+try { esphome run "$Device.yaml" --device $IP } finally { Pop-Location }

@@ -110,11 +110,11 @@ card_mod:
     }
 ```
 
-## Card: T3 Fan
+## Card: MT1 Fan (formerly T3)
 
 ```yaml
 type: custom:mushroom-light-card
-entity: light.t3_fan_speed
+entity: light.mt1_fan_speed
 show_brightness_control: true
 show_color_control: false
 layout: horizontal
@@ -122,7 +122,7 @@ fill_container: true
 icon_color: orange
 secondary_info: state
 icon: mdi:fan
-name: Quạt T3
+name: Quạt MT1
 card_mod:
   style: |
     ha-card {
@@ -211,13 +211,13 @@ cards:
         }
 
   - type: custom:mushroom-light-card
-    entity: light.t3_fan_speed
+    entity: light.mt1_fan_speed
     show_brightness_control: true
     show_color_control: false
     layout: horizontal
     icon_color: orange
     icon: mdi:fan
-    name: T3
+    name: MT1
     card_mod:
       style: |
         ha-card {

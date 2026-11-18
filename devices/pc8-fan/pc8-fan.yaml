@@ -1,0 +1,9 @@
+# ========== PC8 FAN CONFIG ==========
+# HA: light.pc8_fan_speed — auto-speed theo công suất PC8+PC2 (HA-Config 01_pc8_fan_speed_control).
+# Chế độ tần số 100-400Hz — chỉ khác mặc định ở board.
+substitutions:
+  device_name: "pc8-fan"
+  board: "nodemcu-32s"
+
+packages:
+  base: !include ../../common/base.yaml
