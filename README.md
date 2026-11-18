@@ -48,7 +48,7 @@ This project supports two BLDC fan driver architectures. Choose based on your mo
 
 | Model | Board | Control Method | CLK Signal | Extras |
 |-------|-------|---------------|------------|--------|
-| **T1 / T2 / T3** | ESP32 30-pin | **Frequency** (100–400 Hz, 50% fixed duty) | `inverted: false` | — |
+| **T1 / T2 / T3** | ESP32 30-pin | **Frequency** (100–320 Hz, 50% fixed duty) | `inverted: false` | — |
 | **T31** | ESP32 38-pin | **Duty-cycle** (fixed 150 Hz, 30–99.5% variable duty) | `inverted: true` (HIGH = stop) | **Oscillation motor** via D4184 MOSFET (GPIO27) |
 
 #### T1-T3: Frequency-based BLDC control
@@ -58,9 +58,9 @@ Most BLDC ceiling fan drivers (Lishui, Vego, and similar) use a **variable-frequ
 | Brightness | Frequency |
 |-----------|-----------|
 | 0% (OFF) | No signal |
-| 1% | 103 Hz |
-| 50% | 250 Hz |
-| 100% | 400 Hz |
+| 1% | 102 Hz |
+| 50% | 210 Hz |
+| 100% | 320 Hz |
 
 Duty cycle is locked at 50%. The ESP32's **LEDC hardware peripheral** generates this signal on GPIO26.
 
@@ -85,7 +85,7 @@ The T31 uses a different BLDC driver that requires a **variable duty-cycle PWM**
 |-----------|-------|-----|-------|
 | ESP32 Dev Board | 30-pin | 38-pin | 240 MHz, 4 MB flash |
 | EC11 Rotary Encoder | ✓ | ✓ | 20-pulse with push button |
-| BLDC Fan Driver (frequency) | ✓ | — | 100–400 Hz CLK input |
+| BLDC Fan Driver (frequency) | ✓ | — | 100–320 Hz CLK input |
 | BLDC Fan Driver (duty-cycle) | — | ✓ | 150 Hz PWM, inverted logic |
 | D4184 MOSFET Module | — | ✓ | Dual MOSFET for swing motor |
 | BLDC Ceiling Fan Motor | ✓ | ✓ | Match voltage to driver board |
@@ -176,10 +176,10 @@ cd esp32-esphome-bldc-smart-fan
 ### 2. Configure WiFi
 
 ```bash
-cp secrets_example.yaml secrets.yaml
+cp common/secrets_example.yaml common/secrets.yaml
 ```
 
-Edit `secrets.yaml` with your WiFi credentials:
+Edit `common/secrets.yaml` with your WiFi credentials (`!secret` is resolved next to `wifi.yaml`, which uses it):
 
 ```yaml
 wifi_ssid: "YourWiFiSSID"
@@ -196,9 +196,9 @@ Follow the [GPIO pinout](#gpio-pinout) for your model. Double-check the shared G
 # PowerShell (recommended)
 .\flash.ps1 -Device t1-fan -IP 192.168.20.201
 
-# Or double-click the .bat file
+# Or double-click devices\t1-fan\flash.bat
 # Or use ESPHome CLI directly:
-esphome run t1-fan.yaml --device 192.168.20.201
+esphome run devices/t1-fan/t1-fan.yaml --device 192.168.20.201
 ```
 
 First build takes ~2 minutes (compiles ESP-IDF + Arduino). Subsequent builds take ~30 seconds (incremental).
@@ -224,7 +224,7 @@ Copy the YAML from `ha-dashboard/` into your HA dashboard raw editor. Each card 
 | `speed_duty_mode_val` | `false` | `true` | `true` = duty-cycle mode, `false` = frequency mode |
 | `default_frequency` | `150` | `150` | LEDC base frequency (Hz) |
 | `freq_min` | `100` | `100` | Minimum frequency (Hz) — frequency mode only |
-| `freq_max` | `400` | `400` | Maximum frequency (Hz) — frequency mode only |
+| `freq_max` | `320` | `320` | Maximum frequency (Hz) — frequency mode only |
 | `encoder_resolution` | `1` | `1` | EC11 pulses per detent (use `4` if bouncy) |
 | `speed_param_name` | `Fan Frequency` | `Fan Duty` | Diagnostic sensor name |
 | `speed_param_unit` | `Hz` | `%` | Diagnostic sensor unit |
@@ -232,13 +232,14 @@ Copy the YAML from `ha-dashboard/` into your HA dashboard raw editor. Each card 
 
 ### Multi-fan setup
 
-Copy an existing device config and change the name:
+Copy an existing device folder and rename it:
 
 ```bash
-cp t1-fan.yaml t4-fan.yaml
+cp -r devices/t1-fan devices/t4-fan
+mv devices/t4-fan/t1-fan.yaml devices/t4-fan/t4-fan.yaml
 ```
 
-Edit `t4-fan.yaml`:
+Edit `devices/t4-fan/t4-fan.yaml`:
 
 ```yaml
 substitutions:
@@ -273,7 +274,7 @@ All behavior is inherited from `common/base.yaml`. No logic duplication.
 
 | Entity | Type | Description |
 |--------|------|-------------|
-| `light.<device>_speed` | Light | Speed slider (1–100% → 103–400 Hz) |
+| `light.<device>_speed` | Light | Speed slider (1–100% → 102–320 Hz) |
 | `sensor.<device>_fan_frequency` | Sensor | Actual CLK frequency in Hz |
 | `sensor.<device>_firmware_version` | Sensor | Firmware version string |
 | `sensor.<device>_wifi_rssi` | Sensor | WiFi signal strength (dBm) |
@@ -334,7 +335,7 @@ The `ha-dashboard/01_p*_fan_speed_control.yaml` files contain ready-to-use autom
 | Speed jumps erratically | Encoder bounce | Set `encoder_resolution: "4"` |
 | Fan creeps when "OFF" (T31) | Micro-duty too high | Lower `0.005f` to `0.001f` in OFF branch |
 | Speed dips when changing speed (T31) | `ledc_stop()` glitch at 0% or 100% | Ensure duty range is 0.5%–99.5% |
-| "No such file: secrets.yaml" | Missing secrets file | Copy `secrets_example.yaml` → `secrets.yaml` |
+| "No such file: secrets.yaml" | Missing secrets file | Copy `common/secrets_example.yaml` → `common/secrets.yaml` |
 | Build fails after pull | Stale build cache | Delete `.esphome/build/` and recompile |
 | OTA fails (connection timeout) | WiFi signal too weak | Move ESP32 closer to AP, or flash via serial |
 
@@ -343,11 +344,11 @@ The `ha-dashboard/01_p*_fan_speed_control.yaml` files contain ready-to-use autom
 ### Speed algorithm — frequency mode (T1-T3)
 
 ```
-frequency = (brightness × 300) + 100
+frequency = freq_min + brightness × (freq_max − freq_min) = (brightness × 220) + 100
 
 Where:
   brightness = 0.0 – 1.0 (Home Assistant slider)
-  Result: 100 – 400 Hz, constant 50% duty
+  Result: 100 – 320 Hz, constant 50% duty
 ```
 
 - Below 1% brightness → Fan OFF (PWM output disabled)
@@ -384,27 +385,32 @@ T31 uses **channel 8** (low-speed) to avoid a known ESP32 hardware issue where h
 ```
 esp32-esphome-bldc-smart-fan/
 ├── common/
-│   ├── base.yaml                # Shared logic — frequency + duty-cycle dual mode
-│   └── base-oscillation.yaml    # base.yaml + GPIO switch for T31 oscillation
-├── t1-fan.yaml                  # T1 device config (substitutions only)
-├── t2-fan.yaml                  # T2 device config
-├── t3-fan.yaml                  # T3 device config
-├── t31-fan.yaml                 # T31 device config (duty-cycle + oscillation)
+│   ├── base.yaml                # Shared logic + default substitutions (frequency mode)
+│   ├── base-oscillation.yaml    # base.yaml + GPIO switch for T31 oscillation
+│   ├── wifi.yaml                # Shared WiFi block (!secret lookups)
+│   ├── secrets_example.yaml     # WiFi credentials template (copy to secrets.yaml)
+│   └── secrets.yaml             # Your WiFi credentials (gitignored — DO NOT COMMIT)
+├── devices/                     # One folder per device: <name>.yaml + flash.bat
+│   ├── t1-fan/                  # Frequency mode — defaults only
+│   ├── mt1-fan/                 # Frequency mode — replaces old T3
+│   ├── pc1-fan/                 # Frequency mode — PC1 cooling
+│   ├── pc8-fan/                 # Frequency mode, board nodemcu-32s — PC8 cooling
+│   ├── t2-fan/                  # Duty mode 25 kHz (Nidec, inverted PWM)
+│   ├── modem-fan/               # Duty mode 25 kHz (Nidec, inverted PWM)
+│   ├── t31-fan/                 # Duty-cycle + oscillation
+│   └── motor-test/              # Manual motor test firmware (Test Step select)
 ├── ha-dashboard/                # Home Assistant dashboard YAML snippets
 │   ├── dashboard_fan_p1.md
 │   ├── dashboard_fan_p2.md
 │   ├── dashboard_fan_p8.md
 │   ├── dashboard_fan_t31.md
 │   └── 01_p*_fan_speed_control.yaml   # Auto-speed automations
-├── secrets_example.yaml         # WiFi credentials template (copy to secrets.yaml)
-├── secrets.yaml                 # Your WiFi credentials (gitignored — DO NOT COMMIT)
 ├── flash.ps1                    # PowerShell: .\flash.ps1 -Device t1-fan -IP 192.168.20.201
-├── *.bat                        # Quick-flash per device
 ├── README.md
 └── .gitignore
 ```
 
-**Architecture:** ESPHome `packages:` + `!include`. Each device YAML defines only `substitutions:` and includes the shared logic. Modify `common/base.yaml` once — all fans receive the update on next flash.
+**Architecture:** ESPHome `packages:` + `!include`. `common/base.yaml` holds the shared logic **and default substitutions**; each device YAML sets `device_name` plus only the substitutions that differ (substitutions in the main file override those from packages). Modify `common/base.yaml` once — all fans receive the update on next flash. Each device folder gets its own `.esphome/` build cache (gitignored).
 
 ## Development
 

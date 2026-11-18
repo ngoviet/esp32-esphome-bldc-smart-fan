@@ -1,0 +1,8 @@
+# ========== PC1 FAN CONFIG ==========
+# HA: light.tang_3_pc1_fan_speed — auto-speed theo công suất PC1 (HA-Config 01_pc1_fan_speed_control).
+# Chế độ tần số 100-400Hz — dùng toàn bộ mặc định trong common/base.yaml
+substitutions:
+  device_name: "pc1-fan"
+
+packages:
+  base: !include ../../common/base.yaml

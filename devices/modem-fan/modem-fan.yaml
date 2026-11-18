@@ -1,0 +1,24 @@
+# ========== MODEM FAN CONFIG ==========
+# Chỉ ghi phần khác mặc định trong common/base.yaml
+substitutions:
+  device_name: "modem-fan"
+  clk_channel: "8"
+
+  # PWM 25kHz — Nidec 48F704M320 duty mode
+  # inverted: true — motor này PWM ĐẢO (test: FLAT LOW = quay max, FLAT HIGH = tắt).
+  # duty_inverted_speed_val: true — brightness càng cao -> pin LOW càng nhiều -> quay càng nhanh.
+  clk_inverted: "true"
+  duty_inverted_speed_val: "true"
+  speed_duty_mode_val: "true"
+  duty_min_scale_val: "0.26"
+  duty_max_scale_val: "0.90"
+  default_frequency: "25000"
+
+  firmware_version: "3.35 — T2_duty_25k_26-90"
+
+  # Speed display
+  speed_param_name: "Fan Duty"
+  speed_param_unit: "%"
+
+packages:
+  base: !include ../../common/base.yaml

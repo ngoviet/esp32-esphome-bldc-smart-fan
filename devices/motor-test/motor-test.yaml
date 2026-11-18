@@ -1,0 +1,138 @@
+# ===========================================
+# MOTOR TEST MODE — chọn bước thủ công qua HA
+# ===========================================
+# Select entity "Test Step" trong HA: chọn bước → áp ngay.
+# Đấu dây test:
+#   - Đỏ (24V)   → +24V
+#   - Đen (GND)  → GND chung
+#   - Xanh dương (PWM/CLK) → GPIO14
+#
+# Bước:
+#   0: CLK 100Hz   duty 50%
+#   1: CLK 200Hz   duty 50%
+#   2: CLK 300Hz   duty 50%
+#   3: PWM 25kHz   duty 50%
+#   4: PWM 25kHz   duty 90%
+#   5: PWM 1kHz    duty 50%
+#   6: FLAT LOW   (duty 0%  — trạng thái TẮT hiện tại)
+#   7: FLAT HIGH  (duty 100% — trạng thái tắt firmware cũ inverted)
+#   8: CLK 150Hz   duty 50%   (config gốc)
+# ===========================================
+
+esphome:
+  name: motor-test
+  on_boot:
+    priority: -100
+    then:
+      - lambda: |-
+          id(test_step) = 6;  // mặc định FLAT LOW cho an toàn
+          id(apply_test_step).execute();
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+# ---------- WIFI (dùng chung common/wifi.yaml) ----------
+packages:
+  wifi: !include ../../common/wifi.yaml
+
+logger:
+  baud_rate: 115200
+  level: DEBUG
+
+api:
+
+ota:
+  - platform: esphome
+
+# ---------- BIẾN BƯỚC HIỆN TẠI ----------
+globals:
+  - id: test_step
+    type: int
+    restore_value: no
+    initial_value: '6'
+
+# ---------- OUTPUT CLK/PWM (GPIO14) ----------
+output:
+  - platform: ledc
+    id: clk_out
+    pin: GPIO14
+    channel: 8
+    frequency: 25000Hz
+    inverted: false
+
+# ---------- SELECT CHỌN BƯỚC TỪ HA ----------
+select:
+  - platform: template
+    name: "Test Step"
+    id: step_select
+    optimistic: true
+    options:
+      - "0: CLK 100Hz 50"
+      - "1: CLK 200Hz 50"
+      - "2: CLK 300Hz 50"
+      - "3: PWM 25kHz 50"
+      - "4: PWM 25kHz 90"
+      - "5: PWM 1kHz 50"
+      - "6: FLAT LOW (OFF)"
+      - "7: FLAT HIGH"
+      - "8: CLK 150Hz 50"
+    set_action:
+      - lambda: |-
+          id(test_step) = atoi(x.c_str());
+          id(apply_test_step).execute();
+
+# ---------- ÁP DỤNG BƯỚC HIỆN TẠI ----------
+script:
+  - id: apply_test_step
+    mode: restart
+    then:
+      - lambda: |-
+          switch (id(test_step)) {
+            case 0: // CLK 100Hz duty 50%
+              id(clk_out).set_frequency(100);
+              id(clk_out).set_level(0.50f);
+              ESP_LOGI("motor_test", "STEP 0: CLK 100Hz duty 50");
+              break;
+            case 1: // CLK 200Hz duty 50%
+              id(clk_out).set_frequency(200);
+              id(clk_out).set_level(0.50f);
+              ESP_LOGI("motor_test", "STEP 1: CLK 200Hz duty 50");
+              break;
+            case 2: // CLK 300Hz duty 50%
+              id(clk_out).set_frequency(300);
+              id(clk_out).set_level(0.50f);
+              ESP_LOGI("motor_test", "STEP 2: CLK 300Hz duty 50");
+              break;
+            case 3: // PWM 25kHz duty 50%
+              id(clk_out).set_frequency(25000);
+              id(clk_out).set_level(0.50f);
+              ESP_LOGI("motor_test", "STEP 3: PWM 25kHz duty 50");
+              break;
+            case 4: // PWM 25kHz duty 90%
+              id(clk_out).set_frequency(25000);
+              id(clk_out).set_level(0.90f);
+              ESP_LOGI("motor_test", "STEP 4: PWM 25kHz duty 90");
+              break;
+            case 5: // PWM 1kHz duty 50%
+              id(clk_out).set_frequency(1000);
+              id(clk_out).set_level(0.50f);
+              ESP_LOGI("motor_test", "STEP 5: PWM 1kHz duty 50");
+              break;
+            case 6: // FLAT LOW (duty 0%) — tương đương TẮT hiện tại
+              id(clk_out).set_frequency(25000);
+              id(clk_out).set_level(0.0f);
+              ESP_LOGI("motor_test", "STEP 6: FLAT LOW (OFF state)");
+              break;
+            case 7: // FLAT HIGH (duty 100%) — tương đương tắt firmware cũ
+              id(clk_out).set_frequency(25000);
+              id(clk_out).set_level(1.0f);
+              ESP_LOGI("motor_test", "STEP 7: FLAT HIGH (old OFF state)");
+              break;
+            case 8: // CLK 150Hz duty 50% — config gốc
+              id(clk_out).set_frequency(150);
+              id(clk_out).set_level(0.50f);
+              ESP_LOGI("motor_test", "STEP 8: CLK 150Hz duty 50 (original)");
+              break;
+          }

@@ -1,0 +1,8 @@
+# ========== MT1 FAN CONFIG ==========
+# Thay cho T3 cũ (cùng mạch, IP 192.168.20.155).
+# Chế độ tần số 100-400Hz — dùng toàn bộ mặc định trong common/base.yaml
+substitutions:
+  device_name: "mt1-fan"
+
+packages:
+  base: !include ../../common/base.yaml

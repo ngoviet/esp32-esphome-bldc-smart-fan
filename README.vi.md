@@ -48,7 +48,7 @@ Dự án hỗ trợ hai kiến trúc driver quạt BLDC. Chọn theo mạch driv
 
 | Model | Board | Cách điều khiển | Tín hiệu CLK | Bổ sung |
 |-------|-------|---------------|------------|--------|
-| **T1 / T2 / T3** | ESP32 30 chân | **Tần số** (100–400 Hz, duty cố định 50%) | `inverted: false` | — |
+| **T1 / T2 / T3** | ESP32 30 chân | **Tần số** (100–320 Hz, duty cố định 50%) | `inverted: false` | — |
 | **T31** | ESP32 38 chân | **Duty cycle** (cố định 150 Hz, duty thay đổi 30–99.5%) | `inverted: true` (HIGH = dừng) | **Motor đảo gió** qua MOSFET D4184 (GPIO27) |
 
 #### T1-T3: Điều khiển BLDC theo tần số
@@ -58,9 +58,9 @@ Phần lớn driver quạt trần BLDC (Lishui, Vego và các loại tương t�
 | Độ sáng | Tần số |
 |-----------|-----------|
 | 0% (TẮT) | Không có tín hiệu |
-| 1% | 103 Hz |
-| 50% | 250 Hz |
-| 100% | 400 Hz |
+| 1% | 102 Hz |
+| 50% | 210 Hz |
+| 100% | 320 Hz |
 
 Duty cycle cố định 50%. **Ngoại vi phần cứng LEDC** của ESP32 tạo tín hiệu này trên GPIO26.
 
@@ -85,7 +85,7 @@ T31 dùng một loại driver BLDC khác, cần **PWM duty cycle thay đổi** �
 |-----------|-------|-----|-------|
 | Board ESP32 Dev | 30 chân | 38 chân | 240 MHz, flash 4 MB |
 | Encoder xoay EC11 | ✓ | ✓ | 20 xung, có nút nhấn |
-| Driver quạt BLDC (tần số) | ✓ | — | Đầu vào CLK 100–400 Hz |
+| Driver quạt BLDC (tần số) | ✓ | — | Đầu vào CLK 100–320 Hz |
 | Driver quạt BLDC (duty cycle) | — | ✓ | PWM 150 Hz, logic đảo |
 | Module MOSFET D4184 | — | ✓ | MOSFET kép cho motor đảo gió |
 | Motor quạt trần BLDC | ✓ | ✓ | Điện áp khớp với mạch driver |
@@ -176,10 +176,10 @@ cd esp32-esphome-bldc-smart-fan
 ### 2. Cấu hình WiFi
 
 ```bash
-cp secrets_example.yaml secrets.yaml
+cp common/secrets_example.yaml common/secrets.yaml
 ```
 
-Sửa `secrets.yaml`, điền thông tin WiFi của bạn:
+Sửa `common/secrets.yaml`, điền thông tin WiFi của bạn (`!secret` được tìm cạnh `wifi.yaml`, tệp dùng nó):
 
 ```yaml
 wifi_ssid: "YourWiFiSSID"
@@ -196,9 +196,9 @@ Làm theo [sơ đồ chân GPIO](#sơ-đồ-chân-gpio) của model bạn dùng.
 # PowerShell (khuyên dùng)
 .\flash.ps1 -Device t1-fan -IP 192.168.20.201
 
-# Hoặc nhấp đúp tệp .bat
+# Hoặc nhấp đúp devices\t1-fan\flash.bat
 # Hoặc gọi thẳng ESPHome CLI:
-esphome run t1-fan.yaml --device 192.168.20.201
+esphome run devices/t1-fan/t1-fan.yaml --device 192.168.20.201
 ```
 
 Lần build đầu mất khoảng 2 phút (biên dịch ESP-IDF + Arduino). Các lần sau khoảng 30 giây (build tăng dần).
@@ -224,7 +224,7 @@ Chép YAML trong `ha-dashboard/` vào trình sửa raw của dashboard HA. Mỗi
 | `speed_duty_mode_val` | `false` | `true` | `true` = chế độ duty cycle, `false` = chế độ tần số |
 | `default_frequency` | `150` | `150` | Tần số gốc LEDC (Hz) |
 | `freq_min` | `100` | `100` | Tần số nhỏ nhất (Hz) — chỉ ở chế độ tần số |
-| `freq_max` | `400` | `400` | Tần số lớn nhất (Hz) — chỉ ở chế độ tần số |
+| `freq_max` | `320` | `320` | Tần số lớn nhất (Hz) — chỉ ở chế độ tần số |
 | `encoder_resolution` | `1` | `1` | Số xung EC11 mỗi nấc (dùng `4` nếu bị dội) |
 | `speed_param_name` | `Fan Frequency` | `Fan Duty` | Tên sensor chẩn đoán |
 | `speed_param_unit` | `Hz` | `%` | Đơn vị sensor chẩn đoán |
@@ -232,13 +232,14 @@ Chép YAML trong `ha-dashboard/` vào trình sửa raw của dashboard HA. Mỗi
 
 ### Lắp nhiều quạt
 
-Chép cấu hình một thiết bị có sẵn rồi đổi tên:
+Chép thư mục một thiết bị có sẵn rồi đổi tên:
 
 ```bash
-cp t1-fan.yaml t4-fan.yaml
+cp -r devices/t1-fan devices/t4-fan
+mv devices/t4-fan/t1-fan.yaml devices/t4-fan/t4-fan.yaml
 ```
 
-Sửa `t4-fan.yaml`:
+Sửa `devices/t4-fan/t4-fan.yaml`:
 
 ```yaml
 substitutions:
@@ -273,7 +274,7 @@ Mọi hành vi được kế thừa từ `common/base.yaml`. Không lặp lại 
 
 | Thực thể | Loại | Mô tả |
 |--------|------|-------------|
-| `light.<device>_speed` | Light | Thanh trượt tốc độ (1–100% → 103–400 Hz) |
+| `light.<device>_speed` | Light | Thanh trượt tốc độ (1–100% → 102–320 Hz) |
 | `sensor.<device>_fan_frequency` | Sensor | Tần số CLK thực tế (Hz) |
 | `sensor.<device>_firmware_version` | Sensor | Chuỗi phiên bản firmware |
 | `sensor.<device>_wifi_rssi` | Sensor | Cường độ sóng WiFi (dBm) |
@@ -334,7 +335,7 @@ Các tệp `ha-dashboard/01_p*_fan_speed_control.yaml` chứa automation dùng n
 | Tốc độ nhảy lung tung | Encoder bị dội | Đặt `encoder_resolution: "4"` |
 | Quạt vẫn quay chậm khi "TẮT" (T31) | Micro-duty quá cao | Hạ `0.005f` xuống `0.001f` ở nhánh OFF |
 | Tốc độ bị hụt khi đổi tốc độ (T31) | Glitch `ledc_stop()` ở 0% hoặc 100% | Bảo đảm dải duty là 0.5%–99.5% |
-| "No such file: secrets.yaml" | Thiếu tệp secrets | Chép `secrets_example.yaml` → `secrets.yaml` |
+| "No such file: secrets.yaml" | Thiếu tệp secrets | Chép `common/secrets_example.yaml` → `common/secrets.yaml` |
 | Build lỗi sau khi pull | Cache build cũ | Xoá `.esphome/build/` rồi biên dịch lại |
 | OTA lỗi (connection timeout) | Sóng WiFi quá yếu | Đưa ESP32 lại gần AP, hoặc flash qua serial |
 
@@ -343,11 +344,11 @@ Các tệp `ha-dashboard/01_p*_fan_speed_control.yaml` chứa automation dùng n
 ### Thuật toán tốc độ — chế độ tần số (T1-T3)
 
 ```
-frequency = (brightness × 300) + 100
+frequency = freq_min + brightness × (freq_max − freq_min) = (brightness × 220) + 100
 
 Trong đó:
   brightness = 0.0 – 1.0 (thanh trượt Home Assistant)
-  Kết quả: 100 – 400 Hz, duty luôn 50%
+  Kết quả: 100 – 320 Hz, duty luôn 50%
 ```
 
 - Độ sáng dưới 1% → quạt TẮT (tắt output PWM)
@@ -384,27 +385,32 @@ T31 dùng **kênh 8** (low-speed) để tránh một lỗi phần cứng đã bi
 ```
 esp32-esphome-bldc-smart-fan/
 ├── common/
-│   ├── base.yaml                # Logic dùng chung — hai chế độ tần số + duty cycle
-│   └── base-oscillation.yaml    # base.yaml + GPIO switch cho đảo gió T31
-├── t1-fan.yaml                  # Cấu hình thiết bị T1 (chỉ substitutions)
-├── t2-fan.yaml                  # Cấu hình thiết bị T2
-├── t3-fan.yaml                  # Cấu hình thiết bị T3
-├── t31-fan.yaml                 # Cấu hình thiết bị T31 (duty cycle + đảo gió)
+│   ├── base.yaml                # Logic dùng chung + substitutions mặc định (chế độ tần số)
+│   ├── base-oscillation.yaml    # base.yaml + GPIO switch cho đảo gió T31
+│   ├── wifi.yaml                # Khối WiFi dùng chung (đọc !secret)
+│   ├── secrets_example.yaml     # Mẫu thông tin WiFi (chép thành secrets.yaml)
+│   └── secrets.yaml             # Thông tin WiFi của bạn (đã gitignore — KHÔNG COMMIT)
+├── devices/                     # Mỗi thiết bị một thư mục: <tên>.yaml + flash.bat
+│   ├── t1-fan/                  # Chế độ tần số — chỉ dùng mặc định
+│   ├── mt1-fan/                 # Chế độ tần số — thay T3 cũ
+│   ├── pc1-fan/                 # Chế độ tần số — làm mát PC1
+│   ├── pc8-fan/                 # Chế độ tần số, bo nodemcu-32s — làm mát PC8
+│   ├── t2-fan/                  # Chế độ duty 25 kHz (Nidec, PWM đảo)
+│   ├── modem-fan/               # Chế độ duty 25 kHz (Nidec, PWM đảo)
+│   ├── t31-fan/                 # Duty cycle + đảo gió
+│   └── motor-test/              # Firmware thử motor bằng tay (chọn Test Step)
 ├── ha-dashboard/                # Đoạn YAML dashboard Home Assistant
 │   ├── dashboard_fan_p1.md
 │   ├── dashboard_fan_p2.md
 │   ├── dashboard_fan_p8.md
 │   ├── dashboard_fan_t31.md
 │   └── 01_p*_fan_speed_control.yaml   # Automation tự chỉnh tốc độ
-├── secrets_example.yaml         # Mẫu thông tin WiFi (chép thành secrets.yaml)
-├── secrets.yaml                 # Thông tin WiFi của bạn (đã gitignore — KHÔNG COMMIT)
 ├── flash.ps1                    # PowerShell: .\flash.ps1 -Device t1-fan -IP 192.168.20.201
-├── *.bat                        # Flash nhanh cho từng thiết bị
 ├── README.md
 └── .gitignore
 ```
 
-**Kiến trúc:** ESPHome `packages:` + `!include`. YAML của mỗi thiết bị chỉ khai báo `substitutions:` và nạp logic dùng chung. Sửa `common/base.yaml` một lần — mọi quạt nhận bản cập nhật ở lần flash tiếp theo.
+**Kiến trúc:** ESPHome `packages:` + `!include`. `common/base.yaml` giữ logic dùng chung **và substitutions mặc định**; YAML của mỗi thiết bị khai báo `device_name` và chỉ những substitutions khác mặc định (substitutions ở tệp chính đè lên của packages). Sửa `common/base.yaml` một lần — mọi quạt nhận bản cập nhật ở lần flash tiếp theo. Mỗi thư mục thiết bị có cache build `.esphome/` riêng (đã gitignore).
 
 ## Phát triển
 

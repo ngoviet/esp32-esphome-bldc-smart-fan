@@ -1,0 +1,7 @@
+# ========== T1 FAN CONFIG ==========
+# Chế độ tần số 100-400Hz — dùng toàn bộ mặc định trong common/base.yaml
+substitutions:
+  device_name: "t1-fan"
+
+packages:
+  base: !include ../../common/base.yaml
